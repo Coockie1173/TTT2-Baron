@@ -1,8 +1,19 @@
 if SERVER then
 	AddCSLuaFile()
     util.AddNetworkString("BaronGlobalSound")
+    util.AddNetworkString("BaronCreditsGained")
 
     resource.AddFile("materials/vgui/ttt/dynamic/roles/icon_baron.vmt")
+    
+    CreateConVar("ttt2_baron_health", "130", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Maximum health for Baron")
+    CreateConVar("ttt2_baron_base_lives", "3", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Base lives for Baron (before scaling)")
+    CreateConVar("ttt2_baron_lives_scale_threshold", "8", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Minimum players required before Baron lives scaling kicks in")
+    CreateConVar("ttt2_baron_lives_scale_players", "6", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Number of additional players needed for 1 extra Baron life")
+    CreateConVar("ttt2_baron_base_credits", "4", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Base credits given to Baron at round start")
+    CreateConVar("ttt2_baron_credits_scale_threshold", "6", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Minimum players required before Baron credits scaling kicks in")
+    CreateConVar("ttt2_baron_credits_scale_players", "4", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Number of additional players needed for 1 extra Baron starting credit")
+    CreateConVar("ttt2_baron_revival_credits", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Credits gained when Baron is revived")
+    CreateConVar("ttt2_baron_modify_roles", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE, FCVAR_PROTECTED}, "Disable other special roles when Baron is present (1 = enabled, 0 = disabled)")
 end
 
 roles.InitCustomTeam(ROLE.name, {
@@ -39,13 +50,18 @@ function ROLE:PreInitialize()
 end
 
 function ROLE:GiveRoleLoadout(ply, isRoleChange)
-    ply:SetMaxHealth(130)
-    ply:SetHealth(130)
-    ply:SetArmor(20)
+    local health = GetConVar("ttt2_baron_health"):GetInt()
+    
+    ply:SetMaxHealth(health)
+    ply:SetHealth(health)
 
     local numPlayers = #player.GetAll()
-    local extraCredits = math.floor(math.max(numPlayers - 6, 0) / 4)
-    local totalCredits = 4 + extraCredits
+    local scaleThreshold = GetConVar("ttt2_baron_credits_scale_threshold"):GetInt()
+    local scalePlayers = GetConVar("ttt2_baron_credits_scale_players"):GetInt()
+    local baseCredits = GetConVar("ttt2_baron_base_credits"):GetInt()
+    
+    local extraCredits = math.floor(math.max(numPlayers - scaleThreshold, 0) / scalePlayers)
+    local totalCredits = baseCredits + extraCredits
     ply:AddCredits(totalCredits)
 end
 
@@ -55,9 +71,12 @@ if SERVER then
         if ply:GetSubRole() ~= ROLE_BARON then return end
 
         local numPlayers = #player.GetAll()
-        local extraLives = math.floor(math.max(numPlayers - 8, 0) / 6)
-        ply:SetNW2Int("BaronLives", 3 + extraLives)
-
+        local scaleThreshold = GetConVar("ttt2_baron_lives_scale_threshold"):GetInt()
+        local scalePlayers = GetConVar("ttt2_baron_lives_scale_players"):GetInt()
+        local baseLives = GetConVar("ttt2_baron_base_lives"):GetInt()
+        
+        local extraLives = math.floor(math.max(numPlayers - scaleThreshold, 0) / scalePlayers)
+        ply:SetNW2Int("BaronLives", baseLives + extraLives)
     end
 
     hook.Add("TTTBeginRound", "BaronInitLives", function()
@@ -80,6 +99,9 @@ if SERVER then
 end
 
 if CLIENT then
+    local creditsGainedTime = 0
+    local creditsGainedAmount = 0
+
     hook.Add("HUDPaint", "BaronLivesHUD", function()
         local ply = LocalPlayer()
         if not IsValid(ply) or ply:GetSubRole() ~= ROLE_BARON then return end
@@ -95,6 +117,30 @@ if CLIENT then
             TEXT_ALIGN_CENTER,
             TEXT_ALIGN_CENTER
         )
+    end)
+
+    hook.Add("HUDPaint", "BaronCreditsNotification", function()
+        local currentTime = CurTime()
+        if currentTime - creditsGainedTime < 3 then
+            local alpha = 255 * (1 - (currentTime - creditsGainedTime) / 3)
+            local notifX = ScrW() - 20
+            local notifY = 20
+
+            draw.SimpleText(
+                "+ " .. creditsGainedAmount .. " Credits",
+                "Trebuchet24",
+                notifX,
+                notifY,
+                Color(255, 230, 0, alpha),
+                TEXT_ALIGN_RIGHT,
+                TEXT_ALIGN_TOP
+            )
+        end
+    end)
+
+    net.Receive("BaronCreditsGained", function()
+        creditsGainedAmount = net.ReadInt(8)
+        creditsGainedTime = CurTime()
     end)
 
     net.Receive("BaronGlobalSound", function()
@@ -163,7 +209,12 @@ if SERVER then
                     ply:SetCredits(victim.BaronSavedCredits)
                 end
                 
-                victim:AddCredits(1)
+                local revivalCredits = GetConVar("ttt2_baron_revival_credits"):GetInt()
+                victim:AddCredits(revivalCredits)
+
+                net.Start("BaronCreditsGained")
+                net.WriteInt(revivalCredits, 8)
+                net.Send(victim)
 
                 net.Start("BaronGlobalSound")
                 net.Broadcast()
@@ -189,7 +240,9 @@ if SERVER then
     end)
 
 
-    hook.Add("TTT2ModifyFinalRoles", "BARON_MODIFYTTT2ModifyFinalRoles", function(finalRoles)        
+    hook.Add("TTT2ModifyFinalRoles", "BARON_MODIFYTTT2ModifyFinalRoles", function(finalRoles)
+        if GetConVar("ttt2_baron_modify_roles"):GetInt() == 0 then return end
+        
         local players = player.GetAll()
         local baronExists = false
         for _, ply in ipairs(players) do
@@ -238,7 +291,6 @@ if SERVER then
             ply:StripWeapon(wep:GetClass())
         end
 
-        -- Save credits
         ply.BaronSavedCredits = ply:GetCredits()
     end)
 

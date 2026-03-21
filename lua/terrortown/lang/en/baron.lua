@@ -1,7 +1,7 @@
 local L = LANG.GetLanguageTableReference("en")
 
 L[BARON.name] = "Baron"
-L[BARON.defaultTeam] = "The baron"
+L[BARON.defaultTeam] = "The Baron"
 L["hilite_win_" .. BARON.defaultTeam] = "THE BARON WON"
 L["win_" .. BARON.defaultTeam] = "THE BARON WON"
 L["info_popup_" .. BARON.name] = "Baron, you stand alone. Kill them all before you run out of lives!"
