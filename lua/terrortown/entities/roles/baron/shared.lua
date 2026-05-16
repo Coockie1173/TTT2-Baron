@@ -95,6 +95,10 @@ if SERVER then
         end
     end)
 
+    hook.Add("TTT2SwapperModifyRevivalList", "BaronExcludeFromSwapper", function(reviveRoleCandidates)
+        table.remove(reviveRoleCandidates, ROLE_BARON)
+    end)
+
 
 end
 
