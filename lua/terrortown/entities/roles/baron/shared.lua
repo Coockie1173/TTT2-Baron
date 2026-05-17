@@ -33,7 +33,7 @@ function ROLE:PreInitialize()
     self.score.bodyFoundMuliplier = 0
 
     -- Team settings
-    self.unknownTeam = true
+    self.isOmniscientRole = true
     self.defaultTeam = TEAM_BARON
 
     -- Role convars
@@ -46,7 +46,7 @@ function ROLE:PreInitialize()
     }
 
     self.canUseTraitorButtons = true
-    self.canUseRagdollPinner = true   
+    self.canUseRagdollPinner = true
 end
 
 function ROLE:GiveRoleLoadout(ply, isRoleChange)
@@ -96,64 +96,9 @@ if SERVER then
     end)
 
     hook.Add("TTT2SwapperModifyRevivalList", "BaronExcludeFromSwapper", function(reviveRoleCandidates)
-        table.remove(reviveRoleCandidates, ROLE_BARON)
+        reviveRoleCandidates[ROLE_BARON] = nil
     end)
 
-
-end
-
-if CLIENT then
-    local creditsGainedTime = 0
-    local creditsGainedAmount = 0
-
-    hook.Add("HUDPaint", "BaronLivesHUD", function()
-        local ply = LocalPlayer()
-        if not IsValid(ply) or ply:GetSubRole() ~= ROLE_BARON then return end
-
-        local lives = ply:GetNW2Int("BaronLives", 0)
-
-        draw.SimpleText(
-            "Lives Remaining: " .. lives,
-            "Trebuchet24",
-            ScrW() / 2,
-            ScrH() - 80,
-            Color(255, 230, 0),
-            TEXT_ALIGN_CENTER,
-            TEXT_ALIGN_CENTER
-        )
-    end)
-
-    hook.Add("HUDPaint", "BaronCreditsNotification", function()
-        local currentTime = CurTime()
-        if currentTime - creditsGainedTime < 3 then
-            local alpha = 255 * (1 - (currentTime - creditsGainedTime) / 3)
-            local notifX = ScrW() - 20
-            local notifY = 20
-
-            draw.SimpleText(
-                "+ " .. creditsGainedAmount .. " Credits",
-                "Trebuchet24",
-                notifX,
-                notifY,
-                Color(255, 230, 0, alpha),
-                TEXT_ALIGN_RIGHT,
-                TEXT_ALIGN_TOP
-            )
-        end
-    end)
-
-    net.Receive("BaronCreditsGained", function()
-        creditsGainedAmount = net.ReadInt(8)
-        creditsGainedTime = CurTime()
-    end)
-
-    net.Receive("BaronGlobalSound", function()
-        surface.PlaySound("tttbaron/laugh.wav")
-    end)
-
-end
-
-if SERVER then
     hook.Add("TTTCheckForWin", "BaronSoloWinCheck", function()
         local baronAlive = nil
         local othersAlive = false
@@ -176,9 +121,7 @@ if SERVER then
             return TEAM_BARON
         end
     end)
-end
 
-if SERVER then
     hook.Add("PlayerDeath", "BaronRespawnHandler", function(victim)
         if victim:GetSubRole() ~= ROLE_BARON then return end
 
@@ -228,9 +171,7 @@ if SERVER then
             REVIVAL_BLOCK_NONE
         )
     end)
-end
 
-if SERVER then
     hook.Add("TTTCheckForWin", "BaronPreventRoundEndWhileRespawning", function()
         for _, ply in ipairs(player.GetAll()) do
             if ply:GetSubRole() == ROLE_BARON then
@@ -242,7 +183,6 @@ if SERVER then
             end
         end
     end)
-
 
     hook.Add("TTT2ModifyFinalRoles", "BARON_MODIFYTTT2ModifyFinalRoles", function(finalRoles)
         if GetConVar("ttt2_baron_modify_roles"):GetInt() == 0 then return end
@@ -297,6 +237,54 @@ if SERVER then
 
         ply.BaronSavedCredits = ply:GetCredits()
     end)
+end
 
+if CLIENT then
+    local creditsGainedTime = 0
+    local creditsGainedAmount = 0
 
+    hook.Add("HUDPaint", "BaronLivesHUD", function()
+        local ply = LocalPlayer()
+        if not IsValid(ply) or ply:GetSubRole() ~= ROLE_BARON then return end
+
+        local lives = ply:GetNW2Int("BaronLives", 0)
+
+        draw.SimpleText(
+            "Lives Remaining: " .. lives,
+            "Trebuchet24",
+            ScrW() / 2,
+            ScrH() - 80,
+            Color(255, 230, 0),
+            TEXT_ALIGN_CENTER,
+            TEXT_ALIGN_CENTER
+        )
+    end)
+
+    hook.Add("HUDPaint", "BaronCreditsNotification", function()
+        local currentTime = CurTime()
+        if currentTime - creditsGainedTime < 3 then
+            local alpha = 255 * (1 - (currentTime - creditsGainedTime) / 3)
+            local notifX = ScrW() - 20
+            local notifY = 20
+
+            draw.SimpleText(
+                "+ " .. creditsGainedAmount .. " Credits",
+                "Trebuchet24",
+                notifX,
+                notifY,
+                Color(255, 230, 0, alpha),
+                TEXT_ALIGN_RIGHT,
+                TEXT_ALIGN_TOP
+            )
+        end
+    end)
+
+    net.Receive("BaronCreditsGained", function()
+        creditsGainedAmount = net.ReadInt(8)
+        creditsGainedTime = CurTime()
+    end)
+
+    net.Receive("BaronGlobalSound", function()
+        surface.PlaySound("tttbaron/laugh.wav")
+    end)
 end
