@@ -118,10 +118,6 @@ if SERVER then
                 pvs[id] = {}
 
                 for _, target in player.Iterator() do
-                    if target:IsBot() then
-                        target:AddFlags(FL_FROZEN)
-                    end
-
                     if target:Alive() and target:IsActive() and target ~= ply and target:TestPVS(spawn.pos) then
                         table.insert(pvs[id], target)
                     end
