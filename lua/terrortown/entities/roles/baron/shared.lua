@@ -79,6 +79,95 @@ if SERVER then
         ply:SetNW2Int("BaronLives", baseLives + extraLives)
     end
 
+    local function ResolveSpawnHullPoints(origin, mins, maxs)
+        return {
+            origin + Vector(mins.x, mins.y, mins.z),
+            origin + Vector(mins.x, mins.y, maxs.z),
+            origin + Vector(mins.x, maxs.y, mins.z),
+            origin + Vector(maxs.x, mins.y, mins.z),
+            origin + Vector(mins.x, maxs.y, maxs.z),
+            origin + Vector(maxs.x, maxs.y, mins.z),
+            origin + Vector(maxs.x, mins.y, maxs.z),
+            origin + Vector(maxs.x, maxs.y, maxs.z),
+        }
+    end
+
+    local function GetLowestTableSize(tab)
+        local lowest = math.huge
+        local winners = {}
+
+        for id, tbl in pairs( tab ) do
+            if #tbl < lowest then
+                winners = { id }
+                lowest = #tbl
+            elseif #tbl == lowest then
+                table.insert(winners, id)
+            end
+        end
+
+        return winners[math.random(#winners)]
+    end
+
+    local function TestBaronSpawnLOS(ply)
+        local spawns = plyspawn.GetPlayerSpawnPoints()
+
+        if #spawns > 0 then
+            local pvs = {}
+
+            for id, spawn in ipairs(spawns) do
+                pvs[id] = {}
+
+                for _, target in player.Iterator() do
+                    if target:IsBot() then
+                        target:AddFlags(FL_FROZEN)
+                    end
+
+                    if target:Alive() and target:IsActive() and target ~= ply and target:TestPVS(spawn.pos) then
+                        table.insert(pvs[id], target)
+                    end
+                end
+            end
+
+            local los = {}
+
+            for id, tbl in ipairs(pvs) do
+                local mins, maxs = ply:GetHull()
+                local points = ResolveSpawnHullPoints(spawns[id].pos, mins, maxs)
+
+                los[id] = {}
+
+                for _, target in ipairs(tbl) do
+                    local origin = target:EyePos()
+
+                    if origin:DistToSqr(spawns[id].pos) > 384.0 * 384.0 then
+                        for _, point in ipairs(points) do
+                            local tr = util.TraceLine({start = origin, endpos = point, filter = ply, mask = MASK_NPCWORLDSTATIC})
+                            debugoverlay.Cross(tr.HitPos, 5.0, 10.0, COLOR_YELLOW, true)
+
+                            if tr.Fraction == 1.0 then
+                                debugoverlay.Text(point, tr.Fraction, 10.0, false)
+                                debugoverlay.Line(origin, point, 10.0, color_white)
+                                
+                                table.insert(los[id], target)
+                                break
+                            else
+                                debugoverlay.Text(point, tr.Fraction, 10.0, false)
+                                debugoverlay.Line(origin, point, 10.0, COLOR_RED)
+                            end
+                        end
+                    else
+                        table.insert(los[id], target)
+                        break
+                    end
+                end
+            end
+
+            return spawns[GetLowestTableSize(los)]
+        end
+
+        return plyspawn.GetRandomSafePlayerSpawnPoint(ply)
+    end
+
     hook.Add("TTTBeginRound", "BaronInitLives", function()
         for _, ply in ipairs(player.GetAll()) do
             GiveBaronLives(ply)
@@ -127,13 +216,12 @@ if SERVER then
 
         local saved = victim.BaronSavedWeapons or {}
 
-        local lives = victim:GetNW2Int("BaronLives", 3) - 1
+        local lives = math.max(0, victim:GetNW2Int("BaronLives", 3) - 1)
         victim:SetNW2Int("BaronLives", lives)
-
         
         if lives <= 0 then return end
         
-        local spawnPoint = plyspawn.GetRandomSafePlayerSpawnPoint(victim)
+        local spawnPoint = TestBaronSpawnLOS(victim)
         if not spawnPoint then return end
         
         victim:Revive(
@@ -243,21 +331,25 @@ if CLIENT then
     local creditsGainedTime = 0
     local creditsGainedAmount = 0
 
-    hook.Add("HUDPaint", "BaronLivesHUD", function()
-        local ply = LocalPlayer()
-        if not IsValid(ply) or ply:GetSubRole() ~= ROLE_BARON then return end
+    hook.Add("TTT2HUDUpdated", "BaronLivesHUD", function()
+        if not hudelements then return end
 
-        local lives = ply:GetNW2Int("BaronLives", 0)
+        local hudInfoElements = hudelements.GetAllTypeElements("tttinfopanel")
 
-        draw.SimpleText(
-            "Lives Remaining: " .. lives,
-            "Trebuchet24",
-            ScrW() / 2,
-            ScrH() - 80,
-            Color(255, 230, 0),
-            TEXT_ALIGN_CENTER,
-            TEXT_ALIGN_CENTER
-        )
+        for _, v in ipairs(hudInfoElements) do
+            if v.SetSecondaryRoleInfoFunction then
+                v:SetSecondaryRoleInfoFunction(function()
+                    local ply = LocalPlayer()
+
+                    if ply:GetSubRole() == ROLE_BARON then
+                        return {
+                            color = Color(212, 175, 55, 255),
+                            text = "Lives: " .. ply:GetNW2Int("BaronLives", 0)
+                        }
+                    end
+                end)
+            end
+        end
     end)
 
     hook.Add("HUDPaint", "BaronCreditsNotification", function()
